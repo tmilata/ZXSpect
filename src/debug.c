@@ -1,6 +1,5 @@
 #include "debug.h"
 #include "../include.h"
-#include <stdio.h>
 #include <stdbool.h>
 #define LIMIT_BF 1024
 #define FLUSH_CYCLE 2000

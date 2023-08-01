@@ -1,5 +1,4 @@
 #include "osdep.h"
-#include <stdio.h>
 #include "zxem.h"
 #include "debug.h"
 #include "zx48rom.h"
@@ -142,7 +141,7 @@ bool MenuSNA() {
 						int nSnpRet = LoadSnapshot(strFileName);
 						switch (nSnpRet) {
 						case Z80SNAP_BROKEN:
-							DrawClear(COL_BLACK);
+							DrawClear();
 							DrawText("File is broken", 48,
 							         (240 - FONTH) / 2 - FONTH, COL_RED);
 							DispUpdate();
@@ -150,7 +149,7 @@ bool MenuSNA() {
 							bRefresh = true;
 							break;
 						case Z80SNAP_BADHW:
-							DrawClear(COL_BLACK);
+							DrawClear();
 							DrawText("Bad HW specification in file", 48,
 							         (240 - FONTH) / 2 - FONTH, COL_RED);
 							DispUpdate();
@@ -158,7 +157,7 @@ bool MenuSNA() {
 							bRefresh = true;
 							break;
 						case Z80SNAP_128:
-							DrawClear(COL_BLACK);
+							DrawClear();
 							DrawText("Unsupported ZX128 file", 48,
 							         (240 - FONTH) / 2 - FONTH, COL_RED);
 							DispUpdate();
@@ -227,7 +226,7 @@ bool MenuSNA() {
 			break;
 		}
 		if (bRefresh) {
-			DrawClear(COL_BLACK);
+			DrawClear();
 			DrawText2("Select file to load", (WIDTH - 19 * 16) / 2, 24,
 			          COL_YELLOW);
 			DispFileList(nFirstShowed, nMenuPos);
@@ -323,7 +322,7 @@ void MenuKeySelect(int nWhatKey) {
 			break;
 		}
 		if (bRefresh) {
-			DrawClear(COL_BLACK);
+			DrawClear();
 			DrawText2("Select key", (WIDTH - 10 * 16) / 2, 24, COL_YELLOW);
 			DispY = 0;
 			for (int i = nFirstShowedKey;
@@ -388,7 +387,7 @@ bool MenuSound() {
 		}
 		if (bRefresh) {
 			setVolume(nNewVolume);
-			DrawClear(COL_BLACK);
+			DrawClear();
 			DrawText2("Sound volume", (WIDTH - 12 * 16) / 2, 24, COL_YELLOW);
 #define PROGRESS_X 32
 #define PROGRESS_Y 82
@@ -465,7 +464,7 @@ void MenuMap() {
 			break;
 		}
 		if (bRefresh) {
-			DrawClear(COL_BLACK);
+			DrawClear();
 			DrawText2("Keyboard mapping", (WIDTH - 16 * 16) / 2, 24,
 			          COL_YELLOW);
 			int i = 0;
@@ -579,7 +578,7 @@ void OSD_Input(void) {
 		sndOff();
 		int nMenuPos = 0;
 		bool bRefresh = true;
-		DrawClear(COL_BLACK);
+		DrawClear();
 		SelFont8x8();
 		bool bExit = false;
 		while (bExit == false) {
@@ -624,18 +623,18 @@ void OSD_Input(void) {
 						SndInit();
 						bExit = true;
 					} else {
-						DrawClear(COL_BLACK);
+						DrawClear();
 						bRefresh = true;
 					}
 				}
 				if (nMenuPos == 1) {
 					MenuMap();
-					DrawClear(COL_BLACK);
+					DrawClear();
 					bRefresh = true;
 				}
 				if (nMenuPos == 2) {
 					bSave = MenuSound();
-					DrawClear(COL_BLACK);
+					DrawClear();
 					bRefresh = true;
 				}
 				if (nMenuPos == 3) {

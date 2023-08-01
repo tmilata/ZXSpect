@@ -1,5 +1,4 @@
 #include "osdep.h"
-#include <stdio.h>
 #include "zxini.h"
 #include "zxkbd.h"
 #include "zxsnd.h"
