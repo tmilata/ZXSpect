@@ -54,7 +54,7 @@ void ZX_Draw(int nLine) {
 		buf_addr = (y * 8) * 256 + x * 8;
 
 		// Get Attribute
-		attrib = zxmem[attrib_addr];
+		attrib = membank[4][attrib_addr];
 
 		// Lower 3 bits are ink
 		ink = attrib & 0x7;
@@ -85,13 +85,13 @@ void ZX_Draw(int nLine) {
 
 			if (flash || cachedread(attrib_addr)
 					|| cachedread(pixel_addr + j * 256)) {
-				cachedwrite(pixel_addr + j * 256, zxmem[pixel_addr + j * 256]);
+				cachedwrite(pixel_addr + j * 256, membank[4][pixel_addr + j * 256]);
 				// Read spectrum ram where pixel data lives
-				pix = zxmem[pixel_addr + j * 256];
+				pix = membank[4][pixel_addr + j * 256];
 
 				// plot each pixel as ink or paper
 				for (i = 7; i >= 0; i--) {
-					DrawPoint(buf_addr % 256 + SHIFT_X,
+					DrawPointZx(buf_addr % 256 + SHIFT_X,
 							buf_addr / 256 + SHIFT_Y,
 							palette[(pix & 1 << i) ? ink : paper]);
 					buf_addr++;
@@ -102,7 +102,7 @@ void ZX_Draw(int nLine) {
 			// move to next line
 			buf_addr += 256;
 		}
-		cachedwrite(attrib_addr, zxmem[attrib_addr]);
+		cachedwrite(attrib_addr, membank[4][attrib_addr]);
 		// move attrib address along
 		attrib_addr++;
 

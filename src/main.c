@@ -1,7 +1,6 @@
 #include "osdep.h"
 #include "zxem.h"
 #include "debug.h"
-#include "zx48rom.h"
 #include "palette.h"
 #include "zxtap.h"
 #include "fileop.h"
@@ -9,6 +8,9 @@
 #include "zxini.h"
 #include "zxsna.h"
 #include "zxsnd.h"
+#include "ay8912.h"
+
+unsigned char *membank[5];
 
 void defaultKeyMap() {
 //default keys mapping - QAOPM
@@ -17,23 +19,177 @@ void defaultKeyMap() {
 	mapKeys[KBD_LEFT] = getKeyPosition("O");
 	mapKeys[KBD_RIGHT] = getKeyPosition("P");
 	mapKeys[KBD_A] = getKeyPosition("M");
+	if (spectrum_model == ZX128) {
+		mapKeys[KBD_UP] = getKeyPosition("Up-128k");
+		mapKeys[KBD_DOWN] = getKeyPosition("Down-128k");
+		mapKeys[KBD_LEFT] = getKeyPosition("Left-128k");
+		mapKeys[KBD_RIGHT] = getKeyPosition("Right-128k");
+		mapKeys[KBD_A] = getKeyPosition("Enter");
+	}
 	mapKeys[KBD_Y] = getKeyPosition("Enter");
 	mapKeys[KBD_B] = getKeyPosition("Break Space");
 }
 
 int main(int argc, char *argv[]) {
-	//overclocking picopad
+//overclocking picopad
 	ClockPllSysFreq(270000);
+	ClockSetup(CLK_SYS, CLK_PLL_SYS, 0, 0);
 	currPath[0] = '/';
 	currPath[1] = 0;
 	strMapFile[0] = 0;
 	fillKeyInfo();
 	for (int i = 0; i < 8; i++)
 		rowKey[i] = 191;
-	defaultKeyMap();
 	beeper = 0;
+#define ZX_SOUND_TICKS_SMP 159
+	ay_init(&ay0, ZX_SOUND_TICKS_SMP);
+	ay_reset(&ay0);
+	setVolume(5);
+	setModel(ZX48);
+	readIniFile("/ZXSpec.ini");
+	defaultKeyMap();
+	UsbHostInit();
 	ZX_main(argc, argv);
 	return 0;
+}
+
+//maps usb keyboard keys to picopad keys in menus
+char USBMenuMap(char ch) {
+	if ((UsbKeyIsMounted() && (ch == NOKEY))) {
+		if (UsbKeyIsPressed(HID_KEY_ARROW_UP)) {
+			ch = KEY_UP;
+		}
+		if (UsbKeyIsPressed(HID_KEY_ARROW_DOWN)) {
+			ch = KEY_DOWN;
+		}
+		if (UsbKeyIsPressed(HID_KEY_ARROW_LEFT)) {
+			ch = KEY_LEFT;
+		}
+		if (UsbKeyIsPressed(HID_KEY_ARROW_RIGHT)) {
+			ch = KEY_RIGHT;
+		}
+		if (UsbKeyIsPressed(HID_KEY_ENTER)) {
+			ch = KEY_A;
+			WaitMs(200);
+		}
+		if (UsbKeyIsPressed(HID_KEY_ESCAPE) || UsbKeyIsPressed(HID_KEY_F3)) {
+			ch = KEY_X;
+			WaitMs(200);
+		}
+		if (UsbKeyIsPressed(HID_KEY_F5) || UsbKeyIsPressed(HID_KEY_B) || UsbKeyIsPressed(HID_KEY_S)) {
+			ch = KEY_B;
+		}
+		if (UsbKeyIsPressed(HID_KEY_F8) || UsbKeyIsPressed(HID_KEY_Y) || UsbKeyIsPressed(HID_KEY_L)) {
+			ch = KEY_Y;
+		}
+		UsbFlushKey();
+		if (ch != NOKEY)
+			WaitMs(70);
+	}
+	return ch;
+}
+
+bool MenuModel() {
+	bool bExit = false;
+	bool bSave = false;
+	SelFont8x8();
+	char *keyModel[] = { "Model     = ", "AY Sound  = ", "\0" };
+	int nBkpModel = spectrum_model;
+	bool ay0_enable_bkp = ay0_enable;
+	int nMenuPos = 0;
+	bool bRefresh = true;
+	char strBuffer[40];
+	while (bExit == false) {
+		char ch = USBMenuMap(KeyGet());
+		switch (ch) {
+		case KEY_X:
+			if (nBkpModel != spectrum_model)
+				bSave = true;
+			if ((bSave) || (ay0_enable_bkp != ay0_enable)) {
+				saveIniFile("/ZXSpec.ini");
+			}
+			bExit = true;
+			break;
+		case KEY_LEFT:
+		case KEY_RIGHT:
+		case KEY_A:
+			KeyFlush();
+			switch (nMenuPos) {
+			case 0: {
+				int nLocModel = spectrum_model;
+				nLocModel++;
+				if (nLocModel >= ZX_LAST) {
+					nLocModel = ZX48;
+				}
+				setModel((specmodel) nLocModel);
+				if (nLocModel == ZX128) {
+					ay0_enable = true;
+				}
+			}
+				break;
+			case 1:
+				ay0_enable = !ay0_enable;
+				break;
+			}
+			bRefresh = true;
+			break;
+		case KEY_UP:
+			nMenuPos--;
+			if (nMenuPos < 0)
+				nMenuPos = 1;
+			bRefresh = true;
+			break;
+		case KEY_DOWN:
+			nMenuPos++;
+			if (nMenuPos > 1)
+				nMenuPos = 0;
+			bRefresh = true;
+			break;
+		default:
+			break;
+		}
+		if (bRefresh) {
+			DrawClearZx();
+			DrawText2Zx("Select model", (WIDTH - 16 * 16) / 2, 24,
+			COL_YELLOW_ZX);
+			int i = 0;
+			int nPosY = 48;
+			while (keyModel[i][0] != 0) {
+				int nColFrg = COL_WHITE_ZX;
+				int nColBkg = COL_BLACK_ZX;
+				if (i == nMenuPos) {
+					nColFrg = COL_BLACK_ZX;
+					nColBkg = COL_WHITE_ZX;
+				}
+				memcpy(strBuffer, &keyModel[i][0], 12);
+				//getKeyName(&strBuffer[12], mapKeys[i]);
+				switch (i) {
+				case 0:
+					if (spectrum_model == ZX48) {
+						strcpy(&strBuffer[12], "48K");
+					}
+					if (spectrum_model == ZX128) {
+						strcpy(&strBuffer[12], "128K");
+					}
+					break;
+				case 1:
+					if (ay0_enable) {
+						strcpy(&strBuffer[12], "Enabled");
+					} else {
+						strcpy(&strBuffer[12], "Disabled");
+					}
+					break;
+				}
+
+				DrawTextBgZx(strBuffer, 32, nPosY, nColFrg, nColBkg);
+				nPosY += FONTH;
+				i++;
+			}
+			DispUpdateZx();
+			bRefresh = false;
+		}
+	}
+	return bSave;
 }
 
 //Select snapshot menu
@@ -46,9 +202,9 @@ bool MenuSNA() {
 	int nMaxFiles = getFilesNum();
 	bool bRefresh = true;
 	DispFileList(nFirstShowed, nMenuPos);
-	DispUpdate();
+	DispUpdateZx();
 	while (bExit == false) {
-		ch = KeyGet();
+		ch = USBMenuMap(KeyGet());
 		switch (ch) {
 		case KEY_UP:
 			nMenuPos--;
@@ -116,13 +272,13 @@ bool MenuSNA() {
 				//jedna se o tap?
 				int nLenTp = strlen(strFileName);
 				if (nLenTp > 4) {
-					if ((strFileName[nLenTp - 3] == 'T')
-					    && (strFileName[nLenTp - 2] == 'A')
-					    && (strFileName[nLenTp - 1] = 'P')) {
+					if ((strFileName[nLenTp - 3] == 'T') && (strFileName[nLenTp - 2] == 'A') && (strFileName[nLenTp - 1] = 'P')) {
 						assignTapFile(strFileName);
 						setAutoLoadOn();
 						strMapFile[0] = 0;
+						//setModel(spectrum_model);
 						SndInit();
+						ay_reset(&ay0);
 						defaultKeyMap();
 						CPU_Reset(CPU_Handle);
 						strcpy(strMapFile, strFileName);
@@ -138,29 +294,28 @@ bool MenuSNA() {
 					} else {
 						unassignTapFile();
 						setAutoLoadOff();
+						setModel(spectrum_model);
+						CPU_Reset(CPU_Handle);
 						int nSnpRet = LoadSnapshot(strFileName);
 						switch (nSnpRet) {
 						case Z80SNAP_BROKEN:
-							DrawClear();
-							DrawText("File is broken", 48,
-							         (240 - FONTH) / 2 - FONTH, COL_RED);
-							DispUpdate();
+							DrawClearZx();
+							DrawTextZx("File is broken", 48, (240 - FONTH) / 2 - FONTH, COL_RED_ZX);
+							DispUpdateZx();
 							WaitMs(2000);
 							bRefresh = true;
 							break;
 						case Z80SNAP_BADHW:
-							DrawClear();
-							DrawText("Bad HW specification in file", 48,
-							         (240 - FONTH) / 2 - FONTH, COL_RED);
-							DispUpdate();
+							DrawClearZx();
+							DrawTextZx("Bad HW specification in file", 48, (240 - FONTH) / 2 - FONTH, COL_RED_ZX);
+							DispUpdateZx();
 							WaitMs(2000);
 							bRefresh = true;
 							break;
 						case Z80SNAP_128:
-							DrawClear();
-							DrawText("Unsupported ZX128 file", 48,
-							         (240 - FONTH) / 2 - FONTH, COL_RED);
-							DispUpdate();
+							DrawClearZx();
+							DrawTextZx("Unsupported ZX128 file", 48, (240 - FONTH) / 2 - FONTH, COL_RED_ZX);
+							DispUpdateZx();
 							WaitMs(2000);
 							bRefresh = true;
 							break;
@@ -209,8 +364,7 @@ bool MenuSNA() {
 						currPath[nLen + 1] = 0;
 						nLen++;
 					}
-					memcpy(&currPath[nLen], strFileName,
-					       strlen(strFileName) + 1);
+					memcpy(&currPath[nLen], strFileName, strlen(strFileName) + 1);
 					LoadFileList(currPath);
 					nMenuPos = 0;
 					nFirstShowed = 0;
@@ -226,11 +380,11 @@ bool MenuSNA() {
 			break;
 		}
 		if (bRefresh) {
-			DrawClear();
-			DrawText2("Select file to load", (WIDTH - 19 * 16) / 2, 24,
-			          COL_YELLOW);
+			DrawClearZx();
+			DrawText2Zx("Select file to load", (WIDTH - 19 * 16) / 2, 24,
+			COL_YELLOW_ZX);
 			DispFileList(nFirstShowed, nMenuPos);
-			DispUpdate();
+			DispUpdateZx();
 			bRefresh = false;
 		}
 	}
@@ -239,11 +393,10 @@ bool MenuSNA() {
 
 //select mapping key menu
 void MenuKeySelect(int nWhatKey) {
-	//alphabetic ordered keys
-	int orderKi[] = { 15, 20, 21, 22, 23, 24, 19, 18, 17, 16, 30, 4, 0, 38, 35,
-	                  32, 27, 5, 33, 34, 9, 12, 8, 7, 6, 2, 3, 11, 10, 25, 28, 31, 1, 29,
-	                  13, 39, 26, 37, 14, 36
-	                };
+//alphabetic ordered keys
+	int orderKi[] = { 15, 20, 21, 22, 23, 24, 19, 18, 17, 16, 30, 4, 0, 38, 35, 32, 40, 27, 5, 33, 34, 9, 12, 8, 7, 6, 42, 2, 3, 11, 10, 25, 28, 43, 31, 1, 29, 13, 41, 39, 26, 37,
+			14, 36 };
+	int nCntKeys = 44;
 	bool bRet = true;
 	bool bExit = false;
 	bool bRefresh = true;
@@ -253,9 +406,9 @@ void MenuKeySelect(int nWhatKey) {
 	int DispX, DispY;
 	SelFont8x8();
 	unsigned char ch;
-	DispUpdate();
+	DispUpdateZx();
 	while (bExit == false) {
-		ch = KeyGet();
+		ch = USBMenuMap(KeyGet());
 		switch (ch) {
 		case KEY_X:
 			KeyFlush();
@@ -275,11 +428,11 @@ void MenuKeySelect(int nWhatKey) {
 			break;
 		case KEY_DOWN:
 			nMenuPosKey++;
-			if (nMenuPosKey >= 40)
-				nMenuPosKey = 40 - 1;
+			if (nMenuPosKey >= nCntKeys)
+				nMenuPosKey = nCntKeys - 1;
 			if (nMenuPosKey >= nFirstShowedKey + FILEROWS) {
 				nFirstShowedKey++;
-				if (nFirstShowedKey + FILEROWS > 40) {
+				if (nFirstShowedKey + FILEROWS > nCntKeys) {
 					nFirstShowedKey--;
 				}
 			}
@@ -303,13 +456,13 @@ void MenuKeySelect(int nWhatKey) {
 		case KEY_RIGHT:
 			nMenuPosKey += FILEROWS;
 			nFirstShowedKey += FILEROWS;
-			if (nFirstShowedKey + FILEROWS >= 40)
-				nFirstShowedKey = 40 - FILEROWS;
-			if (nMenuPosKey >= 40)
-				nMenuPosKey = 40 - 1;
+			if (nFirstShowedKey + FILEROWS >= nCntKeys)
+				nFirstShowedKey = nCntKeys - FILEROWS;
+			if (nMenuPosKey >= nCntKeys)
+				nMenuPosKey = nCntKeys - 1;
 			if (nMenuPosKey >= nFirstShowedKey + FILEROWS) {
 				nFirstShowedKey++;
-				if (nFirstShowedKey + FILEROWS > 40) {
+				if (nFirstShowedKey + FILEROWS > nCntKeys) {
 					nFirstShowedKey--;
 				}
 			}
@@ -322,28 +475,27 @@ void MenuKeySelect(int nWhatKey) {
 			break;
 		}
 		if (bRefresh) {
-			DrawClear();
-			DrawText2("Select key", (WIDTH - 10 * 16) / 2, 24, COL_YELLOW);
+			DrawClearZx();
+			DrawText2Zx("Select key", (WIDTH - 10 * 16) / 2, 24, COL_YELLOW_ZX);
 			DispY = 0;
-			for (int i = nFirstShowedKey;
-			     (i < nFirstShowedKey + FILEROWS) && (i < 40); i++) {
+			for (int i = nFirstShowedKey; (i < nFirstShowedKey + FILEROWS) && (i < nCntKeys); i++) {
 				DispX = 32;
-				int nColFrg = COL_WHITE;
-				int nColBkg = COL_BLACK;
+				int nColFrg = COL_WHITE_ZX;
+				int nColBkg = COL_BLACK_ZX;
 				if (i == nMenuPosKey) {
-					nColFrg = COL_BLACK;
-					nColBkg = COL_WHITE;
+					nColFrg = COL_BLACK_ZX;
+					nColBkg = COL_WHITE_ZX;
 				}
 				strBuffer[0] = ' ';
+				//getKeyName(&strBuffer[1], orderKi[i]);
 				getKeyName(&strBuffer[1], orderKi[i]);
 				int nLen = strlen(strBuffer);
 				strBuffer[nLen] = ' ';
 				strBuffer[nLen + 1] = '\0';
-				DrawTextBg(strBuffer, DispX, 48 + DispY * FONTH, nColFrg,
-				           nColBkg);
+				DrawTextBgZx(strBuffer, DispX, 48 + DispY * FONTH, nColFrg, nColBkg);
 				DispY++;
 			}
-			DispUpdate();
+			DispUpdateZx();
 			bRefresh = false;
 		}
 	}
@@ -357,10 +509,9 @@ bool MenuSound() {
 	char strBuffer[30];
 	int nNewVolume = getVolume();
 	while (bExit == false) {
-		char ch = KeyGet();
+		char ch = USBMenuMap(KeyGet());
 		switch (ch) {
 		case KEY_LEFT:
-			KeyFlush();
 			nNewVolume--;
 			if (nNewVolume < 0) {
 				nNewVolume = 0;
@@ -369,7 +520,6 @@ bool MenuSound() {
 			bRefresh = true;
 			break;
 		case KEY_RIGHT:
-			KeyFlush();
 			nNewVolume++;
 			if (nNewVolume > 9) {
 				nNewVolume = 9;
@@ -382,13 +532,13 @@ bool MenuSound() {
 			bExit = true;
 			break;
 		default:
-			KeyFlush();
 			break;
 		}
 		if (bRefresh) {
 			setVolume(nNewVolume);
-			DrawClear();
-			DrawText2("Sound volume", (WIDTH - 12 * 16) / 2, 24, COL_YELLOW);
+			DrawClearZx();
+			DrawText2Zx("Sound volume", (WIDTH - 12 * 16) / 2, 24,
+			COL_YELLOW_ZX);
 #define PROGRESS_X 32
 #define PROGRESS_Y 82
 #define PROGRESS_W 256
@@ -398,21 +548,23 @@ bool MenuSound() {
 			} else {
 				sprintf(strBuffer, "%i  ", nNewVolume);
 			}
-			DrawText2(strBuffer, (WIDTH - 16) / 2 - 8, PROGRESS_Y - FONTW - 10,
-			          COL_WHITE);
-			DrawFrame(PROGRESS_X - 2, PROGRESS_Y - 2, PROGRESS_W + 4,
-			          PROGRESS_H + 4, COL_WHITE);
-			DrawRect(PROGRESS_X, PROGRESS_Y, PROGRESS_W, PROGRESS_H, COL_GRAY);
-			int col = COL_GREEN;
+			DrawText2Zx(strBuffer, (WIDTH - 16) / 2 - 8,
+			PROGRESS_Y - FONTW - 10,
+			COL_WHITE_ZX);
+			DrawFrameZx(PROGRESS_X - 2, PROGRESS_Y - 2, PROGRESS_W + 4,
+			PROGRESS_H + 4, COL_WHITE_ZX);
+			DrawRectZx(PROGRESS_X, PROGRESS_Y, PROGRESS_W, PROGRESS_H,
+			COL_GRAY_ZX);
+			int col = COL_GREEN_ZX;
 			if (nNewVolume > 7) {
-				col = COL_RED;
+				col = COL_RED_ZX;
 			}
 			if (nNewVolume < 3) {
-				col = COL_YELLOW;
+				col = COL_YELLOW_ZX;
 			}
-			DrawRect(PROGRESS_X, PROGRESS_Y, nNewVolume * PROGRESS_W / 9,
-			         PROGRESS_H, col);
-			DispUpdate();
+			DrawRectZx(PROGRESS_X, PROGRESS_Y, nNewVolume * PROGRESS_W / 9,
+			PROGRESS_H, col);
+			DispUpdateZx();
 			bRefresh = false;
 		}
 	}
@@ -424,18 +576,14 @@ void MenuMap() {
 	bool bExit = false;
 	bool bSave = false;
 	SelFont8x8();
-	char *keyMenu[] = {
-		"KEY UP    = ", "KEY DOWN  = ", "KEY LEFT  = ", "KEY RIGHT = ",
-		"KEY A     = ", "KEY B     = ", "KEY Y     = ", "\0"
-	};
+	char *keyMenu[] = { "KEY UP    = ", "KEY DOWN  = ", "KEY LEFT  = ", "KEY RIGHT = ", "KEY A     = ", "KEY B     = ", "KEY Y     = ", "\0" };
 	int nMenuPos = 0;
 	bool bRefresh = true;
 	char strBuffer[30];
 	while (bExit == false) {
-		char ch = KeyGet();
+		char ch = USBMenuMap(KeyGet());
 		switch (ch) {
 		case KEY_X:
-			KeyFlush();
 			if ((bSave) && (strMapFile[0] != 0)) {
 				saveMapFile(strMapFile, mapKeys);
 			}
@@ -460,33 +608,33 @@ void MenuMap() {
 			bRefresh = true;
 			break;
 		default:
-			KeyFlush();
 			break;
 		}
 		if (bRefresh) {
-			DrawClear();
-			DrawText2("Keyboard mapping", (WIDTH - 16 * 16) / 2, 24,
-			          COL_YELLOW);
+			DrawClearZx();
+			DrawText2Zx("Keyboard mapping", (WIDTH - 16 * 16) / 2, 24,
+			COL_YELLOW_ZX);
 			int i = 0;
 			int nPosY = 48;
 			while (keyMenu[i][0] != 0) {
-				int nColFrg = COL_WHITE;
-				int nColBkg = COL_BLACK;
+				int nColFrg = COL_WHITE_ZX;
+				int nColBkg = COL_BLACK_ZX;
 				if (i == nMenuPos) {
-					nColFrg = COL_BLACK;
-					nColBkg = COL_WHITE;
+					nColFrg = COL_BLACK_ZX;
+					nColBkg = COL_WHITE_ZX;
 				}
 				memcpy(strBuffer, &keyMenu[i][0], 12);
 				getKeyName(&strBuffer[12], mapKeys[i]);
-				DrawTextBg(strBuffer, 32, nPosY, nColFrg, nColBkg);
+				DrawTextBgZx(strBuffer, 32, nPosY, nColFrg, nColBkg);
 				nPosY += FONTH;
 				i++;
 			}
-			DispUpdate();
+			DispUpdateZx();
 			bRefresh = false;
 		}
 	}
 }
+
 bool bUpPressed = false;
 bool bDownPressed = false;
 bool bLeftPressed = false;
@@ -499,40 +647,61 @@ void OSD_Input(void) {
 //response keys according mapping
 	if (KeyPressed(KEY_UP)) {
 		rowKey[getRow(mapKeys[KBD_UP])] &= getPressMask(mapKeys[KBD_UP]);
+		if (getRowAlt(mapKeys[KBD_UP]) != 255) {
+			rowKey[getRowAlt(mapKeys[KBD_UP])] &= getPressMaskAlt(mapKeys[KBD_UP]);
+		}
 		bUpPressed = true;
 	} else {
 		if (bUpPressed) {
 			rowKey[getRow(mapKeys[KBD_UP])] |= getReleaseMask(mapKeys[KBD_UP]);
+			if (getRowAlt(mapKeys[KBD_UP]) != 255) {
+				rowKey[getRowAlt(mapKeys[KBD_UP])] |= getReleaseMaskAlt(mapKeys[KBD_UP]);
+			}
 			bUpPressed = false;
 		}
 	}
 	if (KeyPressed(KEY_DOWN)) {
 		rowKey[getRow(mapKeys[KBD_DOWN])] &= getPressMask(mapKeys[KBD_DOWN]);
+		if (getRowAlt(mapKeys[KBD_DOWN]) != 255) {
+			rowKey[getRowAlt(mapKeys[KBD_DOWN])] &= getPressMaskAlt(mapKeys[KBD_DOWN]);
+		}
 		bDownPressed = true;
 	} else {
 		if (bDownPressed) {
-			rowKey[getRow(mapKeys[KBD_DOWN])] |= getReleaseMask(
-			                                       mapKeys[KBD_DOWN]);
+			rowKey[getRow(mapKeys[KBD_DOWN])] |= getReleaseMask(mapKeys[KBD_DOWN]);
+			if (getRowAlt(mapKeys[KBD_DOWN]) != 255) {
+				rowKey[getRowAlt(mapKeys[KBD_DOWN])] |= getReleaseMaskAlt(mapKeys[KBD_DOWN]);
+			}
 			bDownPressed = false;
 		}
 	}
 	if (KeyPressed(KEY_LEFT)) {
 		rowKey[getRow(mapKeys[KBD_LEFT])] &= getPressMask(mapKeys[KBD_LEFT]);
+		if (getRowAlt(mapKeys[KBD_LEFT]) != 255) {
+			rowKey[getRowAlt(mapKeys[KBD_LEFT])] &= getPressMaskAlt(mapKeys[KBD_LEFT]);
+		}
 		bLeftPressed = true;
 	} else {
 		if (bLeftPressed) {
-			rowKey[getRow(mapKeys[KBD_LEFT])] |= getReleaseMask(
-			                                       mapKeys[KBD_LEFT]);
+			rowKey[getRow(mapKeys[KBD_LEFT])] |= getReleaseMask(mapKeys[KBD_LEFT]);
+			if (getRowAlt(mapKeys[KBD_LEFT]) != 255) {
+				rowKey[getRowAlt(mapKeys[KBD_LEFT])] |= getReleaseMaskAlt(mapKeys[KBD_LEFT]);
+			}
 			bLeftPressed = false;
 		}
 	}
 	if (KeyPressed(KEY_RIGHT)) {
 		rowKey[getRow(mapKeys[KBD_RIGHT])] &= getPressMask(mapKeys[KBD_RIGHT]);
+		if (getRowAlt(mapKeys[KBD_RIGHT]) != 255) {
+			rowKey[getRowAlt(mapKeys[KBD_RIGHT])] &= getPressMaskAlt(mapKeys[KBD_RIGHT]);
+		}
 		bRighPressed = true;
 	} else {
 		if (bRighPressed) {
-			rowKey[getRow(mapKeys[KBD_RIGHT])] |= getReleaseMask(
-			                                        mapKeys[KBD_RIGHT]);
+			rowKey[getRow(mapKeys[KBD_RIGHT])] |= getReleaseMask(mapKeys[KBD_RIGHT]);
+			if (getRowAlt(mapKeys[KBD_RIGHT]) != 255) {
+				rowKey[getRowAlt(mapKeys[KBD_RIGHT])] |= getReleaseMaskAlt(mapKeys[KBD_RIGHT]);
+			}
 			bRighPressed = false;
 		}
 	}
@@ -563,13 +732,22 @@ void OSD_Input(void) {
 			bYPressed = false;
 		}
 	}
-
-	//main menu
-	char *mainMenu[] = { "Load Snapshot/Tape  ", "Map Keys            ",
-	                     "Sound settings      ", "Reset emulator      ",
-	                     "Quit emulator       ", "\0"
-	                   };
+	if (UsbKeyIsMounted()) {
+		ProcessUSBToZXKeyboard();
+	}
+//main menu
+	char *mainMenu[] = { "Load Snapshot/Tape  ", "Map Keys            ", "Set Spectrum Model           ", "Sound volume        ", "Reset emulator      ", "Quit emulator       ",
+			"\0" };
 	char ch = KeyGet();
+
+	if ((UsbKeyIsMounted() && (ch == NOKEY))) {
+		if (UsbKeyIsPressed(HID_KEY_ESCAPE) || UsbKeyIsPressed(HID_KEY_F3)) {
+			ch = KEY_X;
+		}
+		if (ch != NOKEY)
+			WaitMs(250);
+	}
+
 	bool bSave = false;
 	switch (ch) {
 	case KEY_X: {
@@ -578,11 +756,12 @@ void OSD_Input(void) {
 		sndOff();
 		int nMenuPos = 0;
 		bool bRefresh = true;
-		DrawClear();
+		DrawClearZx();
 		SelFont8x8();
 		bool bExit = false;
 		while (bExit == false) {
-			ch = KeyGet();
+			ch = USBMenuMap(KeyGet());
+			//End of USB mappings in this menu
 			switch (ch) {
 			case KEY_X:
 				KeyFlush();
@@ -590,11 +769,15 @@ void OSD_Input(void) {
 				break;
 			case KEY_Y:
 				KeyFlush();
+				setModel(spectrum_model);
+				CPU_Reset(CPU_Handle);
 				//load fast state
 				if (FileExist("/ZXSLOT.SNA")) {
 					LoadSna("/ZXSLOT.SNA");
 					readMapFile("/ZXSLOT.MAP", mapKeys);
 				}
+				SndInit();
+				ay_reset(&ay0);
 				bExit = true;
 				break;
 			case KEY_B:
@@ -606,12 +789,12 @@ void OSD_Input(void) {
 			case KEY_UP:
 				nMenuPos--;
 				if (nMenuPos < 0)
-					nMenuPos = 4;
+					nMenuPos = 5;
 				bRefresh = true;
 				break;
 			case KEY_DOWN:
 				nMenuPos++;
-				if (nMenuPos > 4)
+				if (nMenuPos > 5)
 					nMenuPos = 0;
 				bRefresh = true;
 				break;
@@ -621,35 +804,51 @@ void OSD_Input(void) {
 					if (MenuSNA()) {
 						bSave = true;
 						SndInit();
+						ay_reset(&ay0);
 						bExit = true;
 					} else {
-						DrawClear();
+						DrawClearZx();
 						bRefresh = true;
 					}
 				}
 				if (nMenuPos == 1) {
 					MenuMap();
-					DrawClear();
+					DrawClearZx();
 					bRefresh = true;
 				}
 				if (nMenuPos == 2) {
-					bSave = MenuSound();
-					DrawClear();
+					if (MenuModel()) {
+						SndInit();
+						ay_reset(&ay0);
+						defaultKeyMap();
+						unassignTapFile();
+						setAutoLoadOff();
+						CPU_Reset(CPU_Handle);
+					}
+					DrawClearZx();
 					bRefresh = true;
 				}
 				if (nMenuPos == 3) {
+					bSave = MenuSound();
+					DrawClearZx();
+					bRefresh = true;
+				}
+				if (nMenuPos == 4) {
 					strMapFile[0] = 0;
+					setModel(spectrum_model);
 					SndInit();
+					ay_reset(&ay0);
 					defaultKeyMap();
 					unassignTapFile();
 					setAutoLoadOff();
 					CPU_Reset(CPU_Handle);
 					bExit = true;
 				}
-				if (nMenuPos == 4) {
+				if (nMenuPos == 5) {
 					if (bSave) {
 						saveIniFile("/ZXSpec.ini");
 					}
+					d_fast_fclose();
 					DiskFlush();
 					WaitMs(1000);
 					DiskUnmount();
@@ -658,26 +857,25 @@ void OSD_Input(void) {
 				break;
 			}
 			if (bRefresh) {
-				DrawText2("Emulator menu", (WIDTH - 13 * 16) / 2, 24,
-				          COL_YELLOW);
+				DrawText2Zx("Emulator menu", (WIDTH - 13 * 16) / 2, 24,
+				COL_YELLOW_ZX);
 				int i = 0;
 				int nPosY = 48;
 				while (mainMenu[i][0] != 0) {
-					int nColFrg = COL_WHITE;
-					int nColBkg = COL_BLACK;
+					int nColFrg = COL_WHITE_ZX;
+					int nColBkg = COL_BLACK_ZX;
 					if (i == nMenuPos) {
-						nColFrg = COL_BLACK;
-						nColBkg = COL_WHITE;
+						nColFrg = COL_BLACK_ZX;
+						nColBkg = COL_WHITE_ZX;
 					}
-					DrawTextBg(mainMenu[i], 32, nPosY, nColFrg, nColBkg);
+					DrawTextBgZx(mainMenu[i], 32, nPosY, nColFrg, nColBkg);
 					nPosY += FONTH;
 					i++;
 				}
-				DrawTextBg("Y-load", 320 - 6 * 8, 0, RGBTO16(0x77, 0xDD, 0x77),
-				           COL_BLACK); //green
-				DrawTextBg("B-save", 320 - 6 * 8, 240 - 8,
-				           RGBTO16(0xFF, 0x69, 0x61), COL_BLACK); //red
-				DispUpdate();
+				DrawTextBgZx("Y-load", 320 - 6 * 8, 0, RGBTO8(0x77, 0xDD, 0x77),
+				COL_BLACK_ZX); //green
+				DrawTextBgZx("B-save", 320 - 6 * 8, 240 - 8, RGBTO8(0xFF, 0x69, 0x61), COL_BLACK_ZX); //red
+				DispUpdateZx();
 				bRefresh = false;
 			}
 
@@ -688,17 +886,17 @@ void OSD_Input(void) {
 		sndOn();
 		//invalidate attributes. focrce to redraw
 		for (int i = 6144; i < 6144 + 768; i++) {
-			cached[i] = zxmem[i] + 1;
+			cached[i] = membank[4][i] ^ 0xFF;
 		}
 		//draw correct border
-		DrawRect(0, 0, 320, 24, palette[border]);
-		DrawRect(0, 216, 320, 24, palette[border]);
-		DrawRect(0, 24, 32, 192, palette[border]);
-		DrawRect(288, 24, 32, 192, palette[border]);
+		DrawRectZx(0, 0, 320, 24, palette[border]);
+		DrawRectZx(0, 216, 320, 24, palette[border]);
+		DrawRectZx(0, 24, 32, 192, palette[border]);
+		DrawRectZx(288, 24, 32, 192, palette[border]);
 
 	}
-	break;
-	// unknown key
+		break;
+		// unknown key
 	default:
 		KeyFlush();
 		break;

@@ -1,8 +1,13 @@
 #include "zxsnd.h"
 #include "zxem.h"
+#include "debug.h"
+#include "ay8912.h"
 
-#define SND_BUFF 1768
+#define ONE_FRAME 441
+#define SND_BUFF 8*ONE_FRAME
 unsigned char sndBufffer[SND_BUFF];
+
+int nWrited = 0;
 
 typedef struct {
 	int nReadPos;
@@ -17,7 +22,7 @@ int nWaveMaxValue;
 int nWaveMinValue;
 
 void sndBufferCear() {
-	memset(sndBufffer, 128, SND_BUFF);
+	memset(sndBufffer, beeper > 0 ? nWaveMaxValue : nWaveMinValue, SND_BUFF);
 }
 
 void sndBufferInit() {
@@ -29,6 +34,7 @@ void sndBufferInit() {
 }
 
 void sndSyncReadWritepos(u64 nAbsolutePos) {
+	//d_fprintf("+snc\n");
 	sndBufferCear();
 	bs.nReadAbsolutePos = nAbsolutePos;
 	bs.nWriteAbsolutePos = nAbsolutePos;
@@ -38,8 +44,7 @@ void sndSyncReadWritepos(u64 nAbsolutePos) {
 
 u8 getSndByte() {
 	if (bs.nReadAbsolutePos >= bs.nWriteAbsolutePos) {
-		//d_fprintf("rdabs=%i>=wrtabs=%i\n",bs.nReadAbsolutePos,bs.nWriteAbsolutePos);
-		return 128;
+		return beeper > 0 ? nWaveMaxValue : nWaveMinValue;
 	}
 	u8 nRet = sndBufffer[bs.nReadPos];
 	bs.nReadPos++;
@@ -47,11 +52,13 @@ u8 getSndByte() {
 	if (bs.nReadPos >= SND_BUFF) {
 		bs.nReadPos = 0;
 	}
-	//d_fprintf("send=%i\n",nRet);
+	//d_fprintf("send=%i\n", nRet);
 	return nRet;
 }
 
 bool writeSndByte(u64 nAbsolutePos, u8 nByte) {
+	//d_fprintf("+wrt\n");
+	nWrited = 1;
 	if (nByte > 0) {
 		nByte = nWaveMaxValue;
 	} else {
@@ -62,8 +69,7 @@ bool writeSndByte(u64 nAbsolutePos, u8 nByte) {
 		return false;
 	if (nSize > SND_BUFF)
 		return false;
-	if ((bs.nReadAbsolutePos < bs.nWriteAbsolutePos)
-			&& (nSize + bs.nWriteAbsolutePos - bs.nReadAbsolutePos >= SND_BUFF))
+	if ((bs.nReadAbsolutePos < bs.nWriteAbsolutePos) && (nSize + bs.nWriteAbsolutePos - bs.nReadAbsolutePos >= SND_BUFF))
 		return false;
 	//muzu zapsat
 	if ((bs.nWritePos + nSize) > SND_BUFF) {
@@ -77,25 +83,73 @@ bool writeSndByte(u64 nAbsolutePos, u8 nByte) {
 		bs.nWritePos += nSize;
 		bs.nWriteAbsolutePos = nAbsolutePos;
 	}
+	//d_fprintf("*%llu\n", bs.nWriteAbsolutePos);
 	return true;
 }
 
 void sndFinishFrame(u64 uTotalCycles) {
-	u64 nPos = (u64) ((441 * uTotalCycles) / (u64) CYCLES_PER_STEP);
-	//d_fast_fprintf("frame total=%llu\n",nPos);
+	u64 nPos = (u64) ((ONE_FRAME * uTotalCycles) / (u64) CYCLES_PER_STEP);
+	//pokud nebyl zadny zapis v tomto frame, tak proved zapis alespon 1 bajtu aby se writepointer prilis nerozesel s readpointerem
+	if (nWrited == 0)
+		writeSndByte(nPos, beeper);
 	//pokud se prehravany zvuk priliz vzdalil od nacachovaneho, vycisti cache a udelej drop
 	if (nPos - bs.nWriteAbsolutePos >= SND_BUFF) {
+		//d_debug("-%i",nPos - bs.nWriteAbsolutePos);
 		sndSyncReadWritepos(nPos);
 	}
+	nWrited = 0;
 }
 
 bool bSndOn;
-//prehrava bajty z bufferu
+//for silent on device detection
+u8 nLastBeep = 0;
+u8 nLastAy = 0;
+u8 nPrimaryDevice = 0;
+unsigned long long int nLastBeepCnt = 0;
+unsigned long long int nLastAyCnt = 0;
+//play bytes via IRQ
 void SndIrq() {
 	PWM_IntClear(PWMSND_SLICE);
 	if (nVolume > 0) {
 		if (bSndOn) {
-			PWM_Comp(PWMSND_SLICE, PWMSND_CHAN, (u8) getSndByte());
+			//get AY sample
+			u16 aySmpl = 0;
+			if (ay0_enable)
+				aySmpl = (u16) ay_get_sample(&ay0);
+			//increase or reset silent counter
+			if (aySmpl != nLastAy) {
+				nLastAy = aySmpl;
+				nLastAyCnt = 0;
+				nPrimaryDevice=1;
+			} else {
+				nLastAyCnt++;
+			}
+			//get Beeper sample
+			u16 bprSmpl = (u16) getSndByte();
+			//increase or reset silent counter
+			if (bprSmpl != nLastBeep) {
+				nLastBeep = bprSmpl;
+				nLastBeepCnt = 0;
+				nPrimaryDevice=0;
+			} else {
+				nLastBeepCnt++;
+			}
+
+			//mix beeper sound with AY sound
+			u16 samp= (aySmpl + bprSmpl) - (aySmpl * bprSmpl) / 256;
+			//if the device is unchanged for a long time, it should be removed from the mixing otherwise it may distort the overall sound.
+			//For example. Fuka's Tetris has the beeper in high mode (bit=1) all the time and thus distorts the sound from the AY
+			int nSilentLimit = 2*ONE_FRAME;
+			if ((nLastBeepCnt > nSilentLimit)&&(nPrimaryDevice==1)) {
+				samp = aySmpl;
+			}
+			if ((nLastAyCnt > nSilentLimit)&&(nPrimaryDevice==0)) {
+				samp = bprSmpl;
+			}
+
+			if (samp > 255)
+				samp = 255;
+			PWM_Comp(PWMSND_SLICE, PWMSND_CHAN, samp);
 		}
 	}
 }
@@ -115,6 +169,7 @@ void SndInit() {
 	PWM_Comp(PWMSND_SLICE, PWMSND_CHAN, 128);
 	PWM_IntEnable(PWMSND_SLICE);
 	PWM_Enable(PWMSND_SLICE);
+
 }
 
 void setVolume(int value) {

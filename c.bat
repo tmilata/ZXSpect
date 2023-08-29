@@ -1,13 +1,12 @@
 @echo off
 rem Compilation...
-echo %1
-set TARGET=ZXSpec
-set DEVICE=picopad
-call ..\..\_c1.bat
 
-if not exist %TARGET%.uf2 goto stop
-..\..\_tools\PicoPadLoaderCrc\LoaderCrc.exe %TARGET%.bin %TARGET%.uf2
-if errorlevel 1 goto stop
-if not exist ..\..\!PicoPad\NEW\*.UF2 md ..\..\!PicoPad\NEW
-copy /b %TARGET%.uf2 ..\..\!PicoPad\NEW\%TARGET%.UF2 > nul
-:stop
+set TARGET=ZXSpec
+set GRPDIR=ZXSpec
+
+if "%1"=="" goto default
+..\..\..\_c1.bat %1
+
+:default
+rem ..\..\..\_c1.bat picopad08
+..\..\..\_c1.bat picopad10

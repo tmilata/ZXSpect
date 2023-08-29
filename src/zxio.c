@@ -2,72 +2,54 @@
 #include "zxsnd.h"
 #include "debug.h"
 #include "osdep.h"
-
+#include "ay8912.h"
 
 //memory access routines
-
 uint8_t readbyte(uint16_t addr) {
-	if (addr < 16384) {
-		//patch pro TAP
-		if (nPatchedRom != 0) {
-			//posloupnost bajtu EDFB rekne CPU aby zavolal TAP Loader
-			if (addr == 0x0556) {
-				return 0xED;
-			}
-			if (addr == 0x0557) {
-				return 0xFB;
-			}
-			if (addr == 0x056c) {
-				return 0xC3;
-			}
-			if (addr == 0x056D) {
-				return 0x9F;
-			}
-			if (addr == 0x056E) {
-				return 0x05;
-			}
-			if (addr == 0x059E) {
-				return 0x00;
-			}
-			if (addr == 0x05c8) {
-				return 0xED;
-			}
-			if (addr == 0x05c9) {
-				return 0xFB;
-			}
+	if (nPatchedRom != 0) {
+		if (addr == 0x0556) {
+			return 0xED;
 		}
-		return rom[addr];
-
-	} else {
-		return zxmem[addr - 16384];
+		if (addr == 0x0557) {
+			return 0xFB;
+		}
+		if (addr == 0x056c) {
+			return 0xC3;
+		}
+		if (addr == 0x056D) {
+			return 0x9F;
+		}
+		if (addr == 0x056E) {
+			return 0x05;
+		}
+		if (addr == 0x059E) {
+			return 0x00;
+		}
+		if (addr == 0x05c8) {
+			return 0xED;
+		}
+		if (addr == 0x05c9) {
+			return 0xFB;
+		}
 	}
+	return membank[addr >> 14][addr & 0x3fff];
 }
 
 uint16_t readword(uint16_t addr) {
-	if (addr < 16384) {
-		return rom[addr] | rom[addr + 1] << 8;
-	} else {
-		return zxmem[addr - 16384] | zxmem[addr - 16384 + 1] << 8;
-	}
+	return (uint16_t) readbyte(addr) + (((uint16_t) readbyte(addr + 1)) << 8);
 }
 
 void writebyte(uint16_t addr, uint8_t data) {
-
-	/* Don't allow writing to ROM */
+	// Don't allow writing to ROM
 	if (addr >= 16384) {
-		uint16_t addrtmp = addr - 16384;
-		zxmem[addrtmp] = data;
+		membank[addr >> 14][addr & 0x3fff] = data;
 	}
 
 }
 
 void writeword(uint16_t addr, uint16_t data) {
-	if (addr >= 16384) {
-		uint16_t addrtmp = addr - 16384;
-		zxmem[addrtmp] = data;
-		zxmem[addrtmp + 1] = data >> 8;
-	}
-
+	writebyte(addr, data & 0xff);
+	writebyte(addr + 1, data >> 8);
 }
 
 //IO ports access routines
@@ -122,25 +104,29 @@ uint8_t input(uint16_t port) {
 	}
 
 	//read actually showed attrib byte
-	if ((port&0xFF)==0xFF) {
+	if ((port & 0xFF) == 0xFF) {
 		//up/down border
-		int cyc=total-lasttotal+CPU_getCycles(CPU_Handle);
-		if ((total-lasttotal+CPU_getCycles(CPU_Handle)) < FIRST_SHOWED_BYTE || (total-lasttotal+CPU_getCycles(CPU_Handle)) > LAST_SHOWED_BYTE) {
+		int cyc = total - lasttotal + CPU_getCycles(CPU_Handle);
+		if ((total - lasttotal + CPU_getCycles(CPU_Handle)) < FIRST_SHOWED_BYTE
+				|| (total - lasttotal + CPU_getCycles(CPU_Handle))
+						> LAST_SHOWED_BYTE) {
 			return 0xff;
 		}
 		//left/right border
-		int col = ((total-lasttotal+CPU_getCycles(CPU_Handle)) % ONE_MICROLINE_TICKS) - 3;
+		int col = ((total - lasttotal + CPU_getCycles(CPU_Handle))
+				% ONE_MICROLINE_TICKS) - 3;
 		if (col > 124) {
 			return 0xff;
 		}
-		int row = (total-lasttotal+CPU_getCycles(CPU_Handle)) / ONE_MICROLINE_TICKS - 64;
-		return zxmem[6144+32*row/8+col/4];
+		int row = (total - lasttotal + CPU_getCycles(CPU_Handle))
+				/ ONE_MICROLINE_TICKS - 64;
+		return membank[4][6144 + 32 * row / 8 + col / 4];
 	}
 
 	return 0xFF;
 }
 
-
+uint8_t ay_idx = 0;
 
 void output(uint16_t port, uint8_t data) {
 
@@ -149,10 +135,10 @@ void output(uint16_t port, uint8_t data) {
 			if ((border & 7) != (data & 7)) {
 				//border color changed
 				border = data & 7;
-				DrawRect(0, 0, 320, 24, palette[border]);
-				DrawRect(0, 216, 320, 24, palette[border]);
-				DrawRect(0, 24, 32, 192, palette[border]);
-				DrawRect(288, 24, 32, 192, palette[border]);
+				DrawRectZx(0, 0, 320, 24, palette[border]);
+				DrawRectZx(0, 216, 320, 24, palette[border]);
+				DrawRectZx(0, 24, 32, 192, palette[border]);
+				DrawRectZx(288, 24, 32, 192, palette[border]);
 			}
 			if ((beeper & 16) != (data & 16)) {
 				//sound bit changed
@@ -167,14 +153,19 @@ void output(uint16_t port, uint8_t data) {
 	} else {
 
 		if ((port | 0x3FFD) == 0xFFFD) {
-			//prepare for AY sound
-			//aychip.set_latch(data & 0x0F);
+			//AY sound - write latch
+			if(ay0_enable) ay_reg_select(&ay0, data);
 		}
 
 		if ((port | 0x3FFD) == 0xBFFD) {
-			//prepare for AY sound
-			//aychip.set_value(data);
+			//AY sound - write data
+			if(ay0_enable) ay_reg_write(&ay0, data);
 		}
+
+		if (((port & 0x8002) == 0)&&(spectrum_model!=ZX48)) {
+			page_set(data);
+		}
+
 	}
 
 }

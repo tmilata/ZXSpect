@@ -12,6 +12,8 @@
 #define _OSDEP_H_
 #include "../include.h"
 #include <stdbool.h>
+#include "lib_drawtftzx.h"
+
 
 #pragma GCC diagnostic ignored "-Wwrite-strings"
 
@@ -25,8 +27,8 @@ enum reg {A=0,F,B,C,D,E,H,L,IXH,IXL,IYH,IYL,SPL,SPH,I,R,PC,AF,BC,DE,HL,IX,IY,SP,
 
 typedef enum reg reg;
 
-extern const unsigned char rom[16384];
-extern unsigned short palette[16];
+//extern unsigned short palette[16];
+extern unsigned char palette[16];
 extern unsigned int rowKey[8];
 extern unsigned int border;
 extern unsigned int beeper;
@@ -36,6 +38,13 @@ extern int nMenuPos;
 extern int nFirstShowed;
 extern unsigned long long int  total;
 extern unsigned long long int  lasttotal;
+
+
+typedef enum specmodel {ZX48,ZX128,ZX_LAST} specmodel;
+extern specmodel spectrum_model;
+extern int page;
+extern unsigned char *membank[5];
+extern const unsigned char* rom;
 
 //define positions of PicoPad keys in array mapKeys
 #define KBD_UP		0

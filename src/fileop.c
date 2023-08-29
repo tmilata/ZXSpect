@@ -2,6 +2,7 @@
 #include "fileop.h"
 #include "debug.h"
 
+
 #define MAXFILES	1024
 
 // display
@@ -26,7 +27,7 @@ void LoadFileList(char* strPath) {
 	// clear file list
 	FileNum = 0;
 
-	DiskValidate();
+	DiskAutoMount();
 	// set current directory
 	if (!SetDir(strPath)) return;
 
@@ -207,21 +208,21 @@ void DispFileList(int nFrstShowed,int nMenuPosition) {
 	sFileDesc* fd = &FileDesc[FileTop];
 	for (i = nFrstShowed; (i < nFrstShowed + FILEROWS)&&(i < FileNum); i++) {
 		DispX = 32;
-		int nColFrg=COL_WHITE;
-		int nColBkg=COL_BLACK;
+		int nColFrg=COL_WHITE_ZX;
+		int nColBkg=COL_BLACK_ZX;
 		if(i == nMenuPosition) {
-			nColFrg=COL_BLACK;
-			nColBkg=COL_WHITE;
+			nColFrg=COL_BLACK_ZX;
+			nColBkg=COL_WHITE_ZX;
 		}
 		memset(strBuf,32,13);
 		strBuf[13]=0;
 		if ((fd[i].attr & ATTR_DIR) != 0) {
 			memcpy(strBuf,"/",1);
 			memcpy(&strBuf[1],fd[i].name,fd[i].len);
-			DrawTextBg(strBuf,DispX,48+DispY*FONTH, nColFrg, nColBkg);
+			DrawTextBgZx(strBuf,DispX,48+DispY*FONTH, nColFrg, nColBkg);
 		} else {
 			memcpy(strBuf,fd[i].name,fd[i].len);
-			DrawTextBg(strBuf,DispX,48+DispY*FONTH, nColFrg, nColBkg);
+			DrawTextBgZx(strBuf,DispX,48+DispY*FONTH, nColFrg, nColBkg);
 		}
 		// increase line
 		DispY++;

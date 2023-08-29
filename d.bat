@@ -2,4 +2,4 @@
 rem Delete...
 
 set TARGET=NEW
-call ..\..\_d1.bat
+..\..\..\_d1.bat

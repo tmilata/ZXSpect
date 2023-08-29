@@ -9,8 +9,7 @@ void SndInit();
 void BufferInit();
 void setVolume(int value);
 void FinishFrame(u64 uTotalCycles);
-GLOBAL uint8_t *zxmem;
-GLOBAL uint8_t *cached;
+
 
 // memory handling
 uint8_t readbyte(uint16_t addr);

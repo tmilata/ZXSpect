@@ -29,6 +29,7 @@ typedef struct {
 
 typedef struct debugstate {
   int DispX, DispY; // X and Y text coordinate
+  int nColor;
   int nOpened;
   int nNeedFlush;
   _sFile fst1;

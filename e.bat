@@ -2,4 +2,4 @@
 rem Export to hardware...
 
 set TARGET=NEW
-call ..\..\_e1.bat
+..\..\..\_e1.bat

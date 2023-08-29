@@ -51,5 +51,11 @@ void setAutoLoadOn();
 void setAutoLoadOff();
 // Main entry point
 int ZX_main(int argc, char *argv[]);
+void setModel(specmodel nModel);
+void page_set(int data);
+
+extern uint8_t zxmem[131072];
+extern uint8_t cached[6912];
+
 
 #endif // include once
