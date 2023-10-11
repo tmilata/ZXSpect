@@ -91,8 +91,7 @@ void Z80Reset(Z80_STATE *state) {
 	state->alternates.word[Z80_BC] = 0x0000;
 	state->alternates.word[Z80_DE] = 0x0000;
 	state->alternates.word[Z80_HL] = 0x0000;
-	state->r = 0;
-	state->i = state->pc = state->iff1 = state->iff2 = 0;
+	state->r = state->i = state->pc = state->iff1 = state->iff2 = 0;
 	state->im = Z80_INTERRUPT_MODE_0;
 }
 

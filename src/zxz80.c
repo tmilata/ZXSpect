@@ -343,6 +343,7 @@ int load_z80_file(sFile *file) {
 			}
 		}
 	} else {
+		setModel(ZX48);
 		if (compressed) {
 			//d_fprintf("48k compressed z80 loader\n");
 

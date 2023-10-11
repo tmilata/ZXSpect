@@ -57,6 +57,10 @@ void getTAPInfo(sFile *snap) {
 }
 
 int LoadSna(char *strSnaFile) {
+	return LoadSna(strSnaFile, false, false);
+}
+
+int LoadSna(char *strSnaFile, bool preserveStack, bool ayLoad) {
 	int nRet = Z80SNAP_BROKEN;
 	int nType = 0;
 	sFile snap;
@@ -95,10 +99,12 @@ int LoadSna(char *strSnaFile) {
 				CPU_PutReg8(CPU_Handle, IYH, fgetc(&snap));
 				CPU_PutReg8(CPU_Handle, IXL, fgetc(&snap));
 				CPU_PutReg8(CPU_Handle, IXH, fgetc(&snap));
-				if (fgetc(&snap) & 4) {
+				if ((fgetc(&snap) & 4) != 0) {
+					CPU_SetIff(CPU_Handle, iff1, 1);
 					CPU_SetIff(CPU_Handle, iff2, 1);
 					iff = 1;
 				} else {
+					CPU_SetIff(CPU_Handle, iff1, 0);
 					CPU_SetIff(CPU_Handle, iff2, 0);
 					iff = 0;
 				}
@@ -109,37 +115,31 @@ int LoadSna(char *strSnaFile) {
 				CPU_PutReg8(CPU_Handle, SPH, fgetc(&snap));
 				CPU_SetIntMode(CPU_Handle, fgetc(&snap));
 				output(254, fgetc(&snap) & 7);
-
 				if (nType == 0) {
 					//48k
 					setModel(ZX48);
+					if (preserveStack) {
+						CPU_SetPC(CPU_Handle, fgetc(&snap) + 256 * fgetc(&snap));
+					}
 					for (int i = 16384; i < 65536; i++) {
 						writebyte(i, fgetc(&snap));
 					}
-					unsigned short usPC = 0;
-					if (CPU_GetReg16(CPU_Handle, SP) >= 0x4000) {
-						usPC = readbyte(CPU_GetReg16(CPU_Handle, SP))
-								+ 256
-										* readbyte(
-												CPU_GetReg16(CPU_Handle, SP)
-														+ 1);
-						CPU_SetPC(CPU_Handle, usPC);
-						/*
-						 if (FileRead(&snap, (void*) &k, 2) > 0) {
-						 writebyte(CPU_GetReg16(CPU_Handle, SP) + 1, k >> 8);
-						 writebyte(CPU_GetReg16(CPU_Handle, SP), k & 0xFF);
-						 }
-						 */
-					} // SNA fix - preserve stack
-					usPC = CPU_GetReg16(CPU_Handle, SP) + 2;
-					CPU_PutReg8(CPU_Handle, SPL, usPC & 0xFF);
-					CPU_PutReg8(CPU_Handle, SPH, usPC >> 8);
-					CPU_SetIff(CPU_Handle, iff1, iff);
+					if (!preserveStack) {
+						unsigned short usPC = 0;
+						if (CPU_GetReg16(CPU_Handle, SP) >= 0x4000) {
+							usPC = readbyte(CPU_GetReg16(CPU_Handle, SP)) + 256 * readbyte(CPU_GetReg16(CPU_Handle, SP) + 1);
+							CPU_SetPC(CPU_Handle, usPC);
+						} // SNA fix - preserve stack
+						usPC = CPU_GetReg16(CPU_Handle, SP) + 2;
+						CPU_PutReg8(CPU_Handle, SPL, usPC & 0xFF);
+						CPU_PutReg8(CPU_Handle, SPH, usPC >> 8);
+						CPU_SetIff(CPU_Handle, iff1, iff);
+					}
 				} else {
 					//128K
 					setModel(ZX128);
 					ay_reset(&ay0);
-					ay0_enable=true;
+					ay0_enable = true;
 					FileSeek(&snap, 49179);
 					CPU_SetPC(CPU_Handle, fgetc(&snap) | (fgetc(&snap) << 8));
 					int locPage = fgetc(&snap);
@@ -160,6 +160,18 @@ int LoadSna(char *strSnaFile) {
 					}
 
 				}
+
+				//read AY config
+
+				if (ayLoad) {
+					ay0_enable = ((fgetc(&snap) == 0) ? false : true);
+					for (int i = 0; i < 16; i++) {
+						ay_reg_select(&ay0, i);
+						ay_reg_write(&ay0, fgetc(&snap));
+					}
+					ay_reg_select(&ay0, fgetc(&snap));
+				}
+
 				if (strcmp(strSnaFile, "/ZXSLOT.SNA") == 0) {
 					getTAPInfo(&snap);
 				}
@@ -178,6 +190,10 @@ int LoadSna(char *strSnaFile) {
 }
 
 void SaveSna(char *strFileName) {
+	SaveSna(strFileName, false, false);
+}
+
+void SaveSna(char *strFileName, bool preserveStack, bool aySave) {
 	int k = 0, iff = 0;
 	bool bOpened = false;
 	sFile snap;
@@ -193,18 +209,16 @@ void SaveSna(char *strFileName) {
 		if (bOpened) {
 			unsigned short usTmp;
 			if (spectrum_model == ZX48) {
-				if (CPU_GetReg16(CPU_Handle, SP) >= 0x4002) { // SNA fix - preserve stack
-					k = ((unsigned short) readbyte(
-							CPU_GetReg16(CPU_Handle, SP) - 1) << 8)
-							+ readbyte(CPU_GetReg16(CPU_Handle, SP) - 2);
-					writebyte(CPU_GetReg16(CPU_Handle, SP) - 1,
-							CPU_GetReg16(CPU_Handle, PC) / 256);
-					writebyte(CPU_GetReg16(CPU_Handle, SP) - 2,
-							CPU_GetReg16(CPU_Handle, PC) % 256);
+				if (!preserveStack) {
+					if (CPU_GetReg16(CPU_Handle, SP) >= 0x4002) {
+						k = ((unsigned short) readbyte(CPU_GetReg16(CPU_Handle, SP) - 1) << 8) + readbyte(CPU_GetReg16(CPU_Handle, SP) - 2);
+						writebyte(CPU_GetReg16(CPU_Handle, SP) - 1, CPU_GetReg16(CPU_Handle, PC) / 256);
+						writebyte(CPU_GetReg16(CPU_Handle, SP) - 2, CPU_GetReg16(CPU_Handle, PC) % 256);
+					}
+					usTmp = CPU_GetReg16(CPU_Handle, SP) - 2;
+					CPU_PutReg8(CPU_Handle, SPL, usTmp & 0xFF);
+					CPU_PutReg8(CPU_Handle, SPH, usTmp >> 8);
 				}
-				usTmp = CPU_GetReg16(CPU_Handle, SP) - 2;
-				CPU_PutReg8(CPU_Handle, SPL, usTmp & 0xFF);
-				CPU_PutReg8(CPU_Handle, SPH, usTmp >> 8);
 			}
 			fputc(CPU_GetReg8(CPU_Handle, I), &snap);
 			usTmp = CPU_GetReg16Alt(CPU_Handle, HL);
@@ -230,8 +244,8 @@ void SaveSna(char *strFileName) {
 			fputc(CPU_GetReg8(CPU_Handle, IYH), &snap);
 			fputc(CPU_GetReg8(CPU_Handle, IXL), &snap);
 			fputc(CPU_GetReg8(CPU_Handle, IXH), &snap);
-			if (CPU_GetIff(CPU_Handle, iff1) != 0) {
-				fputc(0xFF, &snap);
+			if (CPU_GetIff(CPU_Handle, iff2) != 0) {
+				fputc(0x04, &snap);
 			} else {
 				fputc(0, &snap);
 			}
@@ -242,7 +256,12 @@ void SaveSna(char *strFileName) {
 			fputc(CPU_GetReg8(CPU_Handle, SPH), &snap);
 			fputc(CPU_GetIntMode(CPU_Handle), &snap);
 			fputc(border & 7, &snap);
-
+			if (spectrum_model == ZX48) {
+				if (preserveStack) {
+					fputc(CPU_GetReg16(CPU_Handle, PC) % 256, &snap);
+					fputc(CPU_GetReg16(CPU_Handle, PC) / 256, &snap);
+				}
+			}
 			if (spectrum_model == ZX48) {
 				//ZX48
 				//int i = FileWrite(&snap, (const void*) zxmem, 49152);
@@ -250,25 +269,25 @@ void SaveSna(char *strFileName) {
 					u8 v = readbyte(i);
 					FileWrite(&snap, (const void*) &v, 1);
 				}
-				//FileWrite(&snap, (const void*) &k, 2);
-				if (CPU_GetReg16(CPU_Handle, SP) >= 0x4000) {
-					CPU_SetPC(CPU_Handle,
-							256 * readbyte(CPU_GetReg16(CPU_Handle, SP) + 1)
-									+ readbyte(CPU_GetReg16(CPU_Handle, SP)));
-					writebyte(CPU_GetReg16(CPU_Handle, SP) + 1, k >> 8);
-					writebyte(CPU_GetReg16(CPU_Handle, SP), k & 0xFF);
-				}
+				if (spectrum_model == ZX48) {
+					if (!preserveStack) {
+						if (CPU_GetReg16(CPU_Handle, SP) >= 0x4000) {
+							CPU_SetPC(CPU_Handle, 256 * readbyte(CPU_GetReg16(CPU_Handle, SP) + 1) + readbyte(CPU_GetReg16(CPU_Handle, SP)));
+							writebyte(CPU_GetReg16(CPU_Handle, SP) + 1, k >> 8);
+							writebyte(CPU_GetReg16(CPU_Handle, SP), k & 0xFF);
+						}
 
-				usTmp = CPU_GetReg16(CPU_Handle, SP) + 2;
-				CPU_PutReg8(CPU_Handle, SPL, usTmp & 0xFF);
-				CPU_PutReg8(CPU_Handle, SPH, usTmp >> 8);
+						usTmp = CPU_GetReg16(CPU_Handle, SP) + 2;
+						CPU_PutReg8(CPU_Handle, SPL, usTmp & 0xFF);
+						CPU_PutReg8(CPU_Handle, SPH, usTmp >> 8);
+					}
+				}
 			} else {
 				//ZX128
 				unsigned char locPage = page & 7;
 				FileWrite(&snap, (const void*) (zxmem + 5 * 16384), 16384);
 				FileWrite(&snap, (const void*) (zxmem + 2 * 16384), 16384);
-				FileWrite(&snap, (const void*) (zxmem + locPage * 16384),
-						16384);
+				FileWrite(&snap, (const void*) (zxmem + locPage * 16384), 16384);
 				unsigned short usPC = CPU_GetReg16(CPU_Handle, PC);
 				fputc(usPC % 256, &snap);
 				fputc(usPC / 256, &snap);
@@ -276,11 +295,24 @@ void SaveSna(char *strFileName) {
 				fputc(0, &snap);
 				for (int i = 0; i < 8; i++) {
 					if ((i != 2) && (i != 5) && (i != locPage)) {
-						FileWrite(&snap, (const void*) (zxmem + i * 16384),
-								16384);
+						FileWrite(&snap, (const void*) (zxmem + i * 16384), 16384);
 					}
 				}
 
+			}
+
+			//save ay settings
+
+			if (aySave) {
+				fputc(ay0_enable == true ? 1 : 0, &snap);
+
+				unsigned char selected_reg = ay_get_sel_regn(&ay0);
+				for (int i = 0; i < 16; i++) {
+					ay_reg_select(&ay0, i);
+					fputc(ay_reg_read(&ay0), &snap);
+				}
+				fputc(selected_reg, &snap);
+				ay_reg_select(&ay0, selected_reg);
 			}
 
 			AppendTAPInfo(&snap);
@@ -298,3 +330,4 @@ void SaveSna(char *strFileName) {
 		}
 	}
 }
+

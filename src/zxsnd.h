@@ -2,6 +2,9 @@
 #define _ZXSND_H_
 
 #include <stdbool.h>
+#define ONE_FRAME 441
+#define SND_BUFF 8*ONE_FRAME
+#define SND_AY_BUFF 8*ONE_FRAME
 
 void SndInit();
 bool writeSndByte(unsigned long long int nAbsolutePos, unsigned char nByte);

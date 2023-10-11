@@ -65,18 +65,54 @@ u64 next_total = CYCLES_PER_STEP;
 u64 real_ticks;
 
 //for debug only
-void MemDump() {
-
-	sFile f1;
+void MemDump1() {
 	char strTmp[1024];
-	char strLogFile[] = "/ram.txt";
+	sFile f1;
+	char strLogFile[] = "/ram1.txt";
 	if (DiskAutoMount()) {
 		if (FileCreate(&f1, strLogFile)) {
-			FileWrite(&f1, (const void*) zxmem, 49152);
+			FileWrite(&f1, (const void*) zxmem, 131072);
 			FileFlush(&f1);
 			FileClose(&f1);
 		}
+
+		char strLogFile[] = "/log1.txt";
+		if (FileCreate(&f1, strLogFile)) {
+			snprintf(strTmp, 1024 - 1, "PC: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X IX: %4.4X IY: %4.4X SP: %4.4X IR: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X\n", CPU_GetReg16(CPU_Handle, PC),
+					CPU_GetReg16(CPU_Handle, AF), CPU_GetReg16(CPU_Handle, BC), CPU_GetReg16(CPU_Handle, DE), CPU_GetReg16(CPU_Handle, HL), CPU_GetReg16(CPU_Handle, IX),
+					CPU_GetReg16(CPU_Handle, IY), CPU_GetReg16(CPU_Handle, SP), 256 * CPU_GetReg8(CPU_Handle, I) + CPU_GetReg8(CPU_Handle, R),CPU_GetReg16Alt(CPU_Handle, AF), CPU_GetReg16Alt(CPU_Handle, BC), CPU_GetReg16Alt(CPU_Handle, DE), CPU_GetReg16Alt(CPU_Handle, HL));
+			FileWrite(&f1, (const void*) strTmp, strlen(strTmp));
+			FileFlush(&f1);
+			FileClose(&f1);
+		}
+
 	}
+
+	DiskFlush();
+}
+
+void MemDump2() {
+	char strTmp[1024];
+	sFile f1;
+	char strLogFile[] = "/ram2.txt";
+	if (DiskAutoMount()) {
+		if (FileCreate(&f1, strLogFile)) {
+			FileWrite(&f1, (const void*) zxmem, 131072);
+			FileFlush(&f1);
+			FileClose(&f1);
+		}
+		char strLogFile[] = "/log2.txt";
+		if (FileCreate(&f1, strLogFile)) {
+			snprintf(strTmp, 1024 - 1, "PC: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X IX: %4.4X IY: %4.4X SP: %4.4X IR: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X\n", CPU_GetReg16(CPU_Handle, PC),
+								CPU_GetReg16(CPU_Handle, AF), CPU_GetReg16(CPU_Handle, BC), CPU_GetReg16(CPU_Handle, DE), CPU_GetReg16(CPU_Handle, HL), CPU_GetReg16(CPU_Handle, IX),
+								CPU_GetReg16(CPU_Handle, IY), CPU_GetReg16(CPU_Handle, SP), 256 * CPU_GetReg8(CPU_Handle, I) + CPU_GetReg8(CPU_Handle, R),CPU_GetReg16Alt(CPU_Handle, AF), CPU_GetReg16Alt(CPU_Handle, BC), CPU_GetReg16Alt(CPU_Handle, DE), CPU_GetReg16Alt(CPU_Handle, HL));
+			FileWrite(&f1, (const void*) strTmp, strlen(strTmp));
+			FileFlush(&f1);
+			FileClose(&f1);
+		}
+
+	}
+
 	DiskFlush();
 }
 
@@ -98,14 +134,10 @@ void mainloop(void) {
 		//if(total>500000)
 		//if(total<960000)
 		{
-		d_fast_fprintf(
-				"PC: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X IX: %4.4X IY: %4.4X SP: %4.4X IR: %4.4X %2.2X %llu\n",
-				CPU_GetReg16(CPU_Handle, PC), CPU_GetReg16(CPU_Handle, AF),
-				CPU_GetReg16(CPU_Handle, BC), CPU_GetReg16(CPU_Handle, DE),
-				CPU_GetReg16(CPU_Handle, HL), CPU_GetReg16(CPU_Handle, IX),
-				CPU_GetReg16(CPU_Handle, IY), CPU_GetReg16(CPU_Handle, SP),
-				256 * CPU_GetReg8(CPU_Handle, I) + CPU_GetReg8(CPU_Handle, R),readbyte(CPU_GetReg16(CPU_Handle, HL)),
-				total);
+			d_fast_fprintf("PC: %4.4X AF: %4.4X BC: %4.4X DE: %4.4X HL: %4.4X IX: %4.4X IY: %4.4X SP: %4.4X IR: %4.4X %2.2X %llu\n", CPU_GetReg16(CPU_Handle, PC),
+					CPU_GetReg16(CPU_Handle, AF), CPU_GetReg16(CPU_Handle, BC), CPU_GetReg16(CPU_Handle, DE), CPU_GetReg16(CPU_Handle, HL), CPU_GetReg16(CPU_Handle, IX),
+					CPU_GetReg16(CPU_Handle, IY), CPU_GetReg16(CPU_Handle, SP), 256 * CPU_GetReg8(CPU_Handle, I) + CPU_GetReg8(CPU_Handle, R),
+					readbyte(CPU_GetReg16(CPU_Handle, HL)), total);
 		}
 		total += CPU_Emulate(CPU_Handle, 1);
 
@@ -119,9 +151,7 @@ void mainloop(void) {
 			DiskUnmount();
 			ResetToBootLoader();
 		}
-
 	}
-
 	if (total >= next_total) {
 		next_total += CYCLES_PER_STEP;
 		ZX_Input();
@@ -161,13 +191,10 @@ int LoadSnapshot(char *strSnaFile) {
 	int nRet = Z80SNAP_BROKEN;
 	int nLenSn = strlen(strSnaFile);
 	if (nLenSn > 4) {
-		if ((strSnaFile[nLenSn - 3] == 'S') && (strSnaFile[nLenSn - 2] == 'N')
-				&& (strSnaFile[nLenSn - 1] = 'A')) {
+		if ((strSnaFile[nLenSn - 3] == 'S') && (strSnaFile[nLenSn - 2] == 'N') && (strSnaFile[nLenSn - 1] = 'A')) {
 			nRet = LoadSna(strSnaFile);
 		} else {
-			if ((strSnaFile[nLenSn - 3] == 'Z')
-					&& (strSnaFile[nLenSn - 2] == '8')
-					&& (strSnaFile[nLenSn - 1] = '0')) {
+			if ((strSnaFile[nLenSn - 3] == 'Z') && (strSnaFile[nLenSn - 2] == '8') && (strSnaFile[nLenSn - 1] = '0')) {
 				nRet = LoadZ80(strSnaFile);
 			}
 		}

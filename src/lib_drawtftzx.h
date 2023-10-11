@@ -104,6 +104,11 @@ void DrawText2Zx(const char* text, int x, int y, u8 col);
 void DrawTextBgZx(const char* text, int x, int y, u8 col, u8 bgcol);
 
 void DispUpdateZx();
+void InitDirtyTiles();
+void DirtyTilesNone();
+void DirtyTilesAll();
+void DispDirtyPointTiles(int x, int y);
+void DispDirtyRectTiles(int x, int y, int w, int h);
 
 #ifdef __cplusplus
 }

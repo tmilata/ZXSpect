@@ -2,7 +2,8 @@
 #include "../include.h"
 #include <stdbool.h>
 #include "lib_drawtftzx.h"
-#define LIMIT_BF 1024
+
+#define LIMIT_BF 2048
 #define FLUSH_CYCLE 200
 #ifndef FONTW
 #define FONTW		8		// width of system font
@@ -11,13 +12,23 @@
 #define FONTH		16		// height of system font
 #endif
 
-debugstate dbgstate = { .DispX = 0, .DispY = 0, .nColor = 0, .nOpened = 0,
-		.nNeedFlush = FLUSH_CYCLE };
+typedef struct debugstate {
+	int DispX, DispY; // X and Y text coordinate
+	int nColor;
+	int nOpened;
+	int nNeedFlush;
+	sFile fst1;
+} debugstate;
+
+ALIGNED char strTmp[LIMIT_BF];
+
+debugstate dbgstate = { .DispX = 0, .DispY = 0, .nColor = 0, .nOpened = 0, .nNeedFlush = FLUSH_CYCLE };
 
 void d_DispText(const char *text) {
 	SelFont8x16();
 	int nCol = COL_WHITE_ZX;
-	if (dbgstate.nColor == 1) nCol = COL_YELLOW;
+	if (dbgstate.nColor == 1)
+		nCol = COL_YELLOW;
 	DrawTextBgZx(text, dbgstate.DispX * FONTW, dbgstate.DispY * FONTH, 0, nCol);
 	dbgstate.DispX += StrLen(text);
 	DispUpdateZx();
@@ -26,7 +37,6 @@ void d_DispText(const char *text) {
 //print debug message to display
 void d_debug(char *text, ...) {
 	va_list list;
-	char strTmp[LIMIT_BF];
 	va_start(list, text);
 	vsnprintf(strTmp, LIMIT_BF - 1, text, list);
 	va_end(list);
@@ -36,63 +46,54 @@ void d_debug(char *text, ...) {
 	if (dbgstate.DispY * FONTH > 240) {
 		dbgstate.DispY = 0;
 		dbgstate.nColor++;
-		if(dbgstate.nColor>1){
-			dbgstate.nColor=0;
+		if (dbgstate.nColor > 1) {
+			dbgstate.nColor = 0;
 		}
 	}
 }
 
 //fast fprintf to file, file stays opened, so d_fast_fclose must be called at finish
 void d_fast_fprintf(char *text, ...) {
-	sFile filcnv;
-	memcpy(&filcnv, &dbgstate.fst1, sizeof(sFile));
-	va_list list;
-	bool bOpenedLoc = false;
-	char strTmp[LIMIT_BF];
-	char strLogFile[] = "/flog.txt";
-	if (dbgstate.nOpened == 0) {
-		if (DiskAutoMount()) {
-			if (FileExist(strLogFile)) {
-				if (true == (bOpenedLoc = FileOpen(&filcnv, strLogFile))) {
-					FileSeek(&filcnv, FileSize(&filcnv));
+		va_list list;
+		bool bOpenedLoc = false;
+
+		char strLogFile[] = "/flog.txt";
+		if (dbgstate.nOpened == 0) {
+			if (DiskAutoMount()) {
+				if (FileExist(strLogFile)) {
+					if (true == (bOpenedLoc = FileOpen(&dbgstate.fst1, strLogFile))) {
+						FileSeek(&dbgstate.fst1, FileSize(&dbgstate.fst1));
+					}
+				} else {
+					bOpenedLoc = FileCreate(&dbgstate.fst1, strLogFile);
 				}
-			} else {
-				bOpenedLoc = FileCreate(&filcnv, strLogFile);
-			}
-			if (bOpenedLoc) {
-				dbgstate.nOpened = 1;
-				va_start(list, text);
-				vsnprintf(strTmp, LIMIT_BF - 1, text, list);
-				va_end(list);
-				FileWrite(&filcnv, (const void*) strTmp, strlen(strTmp));
-				dbgstate.nNeedFlush--;
-				if (dbgstate.nNeedFlush == 0) {
-					dbgstate.nNeedFlush = FLUSH_CYCLE;
-					DiskFlush();
+				if (bOpenedLoc) {
+					dbgstate.nOpened = 1;
+					va_start(list, text);
+					vsnprintf(strTmp, LIMIT_BF - 1, text, list);
+					va_end(list);
+					FileWrite(&dbgstate.fst1, (const void*) strTmp, strlen(strTmp));
+					/*
+					 dbgstate.nNeedFlush--;
+					 if (dbgstate.nNeedFlush == 0) {
+					 dbgstate.nNeedFlush = FLUSH_CYCLE;
+					 DiskFlush();
+					 }
+					 */
 				}
-				memcpy(&dbgstate.fst1, &filcnv, sizeof(sFile));
 			}
+		} else {
+			va_start(list, text);
+			vsnprintf(strTmp, LIMIT_BF - 1, text, list);
+			va_end(list);
+			FileWrite(&dbgstate.fst1, (const void*) strTmp, strlen(strTmp));
 		}
-	} else {
-		va_start(list, text);
-		vsnprintf(strTmp, LIMIT_BF - 1, text, list);
-		va_end(list);
-		FileWrite(&filcnv, (const void*) strTmp, strlen(strTmp));
-		dbgstate.nNeedFlush--;
-		if (dbgstate.nNeedFlush == 0) {
-			dbgstate.nNeedFlush = FLUSH_CYCLE;
-			DiskFlush();
-		}
-		memcpy(&dbgstate.fst1, &filcnv, sizeof(sFile));
 	}
-}
 
 void d_fast_fclose() {
 	if (dbgstate.nOpened == 1) {
-		sFile filcnv;
-		memcpy(&filcnv, &dbgstate.fst1, sizeof(_sFile));
-		FileFlush(&filcnv);
-		FileClose(&filcnv);
+		FileFlush(&dbgstate.fst1);
+		FileClose(&dbgstate.fst1);
 		dbgstate.nOpened = 0;
 	}
 }
@@ -102,7 +103,6 @@ void d_fprintf(char *text, ...) {
 	bool bOpened = false;
 	sFile f1;
 	va_list list;
-	char strTmp[LIMIT_BF];
 	char strLogFile[] = "/log.txt";
 	if (DiskAutoMount()) {
 		if (FileExist(strLogFile)) {

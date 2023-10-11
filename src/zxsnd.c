@@ -3,9 +3,8 @@
 #include "debug.h"
 #include "ay8912.h"
 
-#define ONE_FRAME 441
-#define SND_BUFF 8*ONE_FRAME
-unsigned char sndBufffer[SND_BUFF];
+
+unsigned char sndBeeperBufffer[SND_BUFF];
 
 int nWrited = 0;
 
@@ -16,17 +15,19 @@ typedef struct {
 	u64 nWriteAbsolutePos;
 } buffStatus;
 
+//beeper buffer
 buffStatus bs;
+
 int nVolume;
 int nWaveMaxValue;
 int nWaveMinValue;
 
-void sndBufferCear() {
-	memset(sndBufffer, beeper > 0 ? nWaveMaxValue : nWaveMinValue, SND_BUFF);
+void sndBufferClear() {
+	memset(sndBeeperBufffer, beeper > 0 ? nWaveMaxValue : nWaveMinValue, SND_BUFF);
 }
 
 void sndBufferInit() {
-	sndBufferCear();
+	sndBufferClear();
 	bs.nReadPos = 0;
 	bs.nWritePos = 0;
 	bs.nReadAbsolutePos = 0;
@@ -35,7 +36,7 @@ void sndBufferInit() {
 
 void sndSyncReadWritepos(u64 nAbsolutePos) {
 	//d_fprintf("+snc\n");
-	sndBufferCear();
+	sndBufferClear();
 	bs.nReadAbsolutePos = nAbsolutePos;
 	bs.nWriteAbsolutePos = nAbsolutePos;
 	bs.nWritePos = nAbsolutePos % SND_BUFF;
@@ -46,7 +47,7 @@ u8 getSndByte() {
 	if (bs.nReadAbsolutePos >= bs.nWriteAbsolutePos) {
 		return beeper > 0 ? nWaveMaxValue : nWaveMinValue;
 	}
-	u8 nRet = sndBufffer[bs.nReadPos];
+	u8 nRet = sndBeeperBufffer[bs.nReadPos];
 	bs.nReadPos++;
 	bs.nReadAbsolutePos++;
 	if (bs.nReadPos >= SND_BUFF) {
@@ -74,12 +75,12 @@ bool writeSndByte(u64 nAbsolutePos, u8 nByte) {
 	//muzu zapsat
 	if ((bs.nWritePos + nSize) > SND_BUFF) {
 		//zpet na zacatek bufferu
-		memset(&sndBufffer[bs.nWritePos], nByte, SND_BUFF - bs.nWritePos);
-		memset(&sndBufffer[0], nByte, nSize - (SND_BUFF - bs.nWritePos));
+		memset(&sndBeeperBufffer[bs.nWritePos], nByte, SND_BUFF - bs.nWritePos);
+		memset(&sndBeeperBufffer[0], nByte, nSize - (SND_BUFF - bs.nWritePos));
 		bs.nWritePos = nSize - (SND_BUFF - bs.nWritePos);
 		bs.nWriteAbsolutePos = nAbsolutePos;
 	} else {
-		memset(&sndBufffer[bs.nWritePos], nByte, nSize);
+		memset(&sndBeeperBufffer[bs.nWritePos], nByte, nSize);
 		bs.nWritePos += nSize;
 		bs.nWriteAbsolutePos = nAbsolutePos;
 	}
@@ -101,51 +102,22 @@ void sndFinishFrame(u64 uTotalCycles) {
 }
 
 bool bSndOn;
-//for silent on device detection
-u8 nLastBeep = 0;
-u8 nLastAy = 0;
-u8 nPrimaryDevice = 0;
-unsigned long long int nLastBeepCnt = 0;
-unsigned long long int nLastAyCnt = 0;
+
 //play bytes via IRQ
 void SndIrq() {
 	PWM_IntClear(PWMSND_SLICE);
 	if (nVolume > 0) {
 		if (bSndOn) {
-			//get AY sample
-			u16 aySmpl = 0;
-			if (ay0_enable)
-				aySmpl = (u16) ay_get_sample(&ay0);
-			//increase or reset silent counter
-			if (aySmpl != nLastAy) {
-				nLastAy = aySmpl;
-				nLastAyCnt = 0;
-				nPrimaryDevice=1;
-			} else {
-				nLastAyCnt++;
-			}
-			//get Beeper sample
-			u16 bprSmpl = (u16) getSndByte();
-			//increase or reset silent counter
-			if (bprSmpl != nLastBeep) {
-				nLastBeep = bprSmpl;
-				nLastBeepCnt = 0;
-				nPrimaryDevice=0;
-			} else {
-				nLastBeepCnt++;
-			}
 
+			u16 aySmpl = 0;
+			if (ay0_enable){
+				aySmpl = (u16) ay_get_sample(&ay0);
+			}
+			u16 bprSmpl = (u16) getSndByte();
 			//mix beeper sound with AY sound
-			u16 samp= (aySmpl + bprSmpl) - (aySmpl * bprSmpl) / 256;
-			//if the device is unchanged for a long time, it should be removed from the mixing otherwise it may distort the overall sound.
-			//For example. Fuka's Tetris has the beeper in high mode (bit=1) all the time and thus distorts the sound from the AY
-			int nSilentLimit = 2*ONE_FRAME;
-			if ((nLastBeepCnt > nSilentLimit)&&(nPrimaryDevice==1)) {
-				samp = aySmpl;
-			}
-			if ((nLastAyCnt > nSilentLimit)&&(nPrimaryDevice==0)) {
-				samp = bprSmpl;
-			}
+			u16 samp = (aySmpl + bprSmpl) / 2;
+			//slight sound amplification
+			//samp = (5*samp)/4;
 
 			if (samp > 255)
 				samp = 255;

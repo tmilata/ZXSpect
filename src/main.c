@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
 //overclocking picopad
 	ClockPllSysFreq(270000);
 	ClockSetup(CLK_SYS, CLK_PLL_SYS, 0, 0);
+	InitDirtyTiles();
 	currPath[0] = '/';
 	currPath[1] = 0;
 	strMapFile[0] = 0;
@@ -276,7 +277,6 @@ bool MenuSNA() {
 						assignTapFile(strFileName);
 						setAutoLoadOn();
 						strMapFile[0] = 0;
-						//setModel(spectrum_model);
 						SndInit();
 						ay_reset(&ay0);
 						defaultKeyMap();
@@ -736,7 +736,7 @@ void OSD_Input(void) {
 		ProcessUSBToZXKeyboard();
 	}
 //main menu
-	char *mainMenu[] = { "Load Snapshot/Tape  ", "Map Keys            ", "Set Spectrum Model           ", "Sound volume        ", "Reset emulator      ", "Quit emulator       ",
+	char *mainMenu[] = { "Load Snapshot/Tape  ", "Map Keys            ","Set Spectrum Model  ", "Sound volume        ", "Reset emulator      ", "Quit emulator       ",
 			"\0" };
 	char ch = KeyGet();
 
@@ -773,17 +773,18 @@ void OSD_Input(void) {
 				CPU_Reset(CPU_Handle);
 				//load fast state
 				if (FileExist("/ZXSLOT.SNA")) {
-					LoadSna("/ZXSLOT.SNA");
+					LoadSna("/ZXSLOT.SNA",true,true);
 					readMapFile("/ZXSLOT.MAP", mapKeys);
 				}
+				//MemDump2();
 				SndInit();
-				ay_reset(&ay0);
 				bExit = true;
 				break;
 			case KEY_B:
 				KeyFlush();
+				//MemDump1();
 				//save fast state
-				SaveSna("/ZXSLOT.SNA");
+				SaveSna("/ZXSLOT.SNA",true,true);
 				bExit = true;
 				break;
 			case KEY_UP:

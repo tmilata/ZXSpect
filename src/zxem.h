@@ -57,5 +57,8 @@ void page_set(int data);
 extern uint8_t zxmem[131072];
 extern uint8_t cached[6912];
 
+void MemDump1();
+void MemDump2();
+
 
 #endif // include once

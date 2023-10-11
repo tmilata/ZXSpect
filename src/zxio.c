@@ -154,11 +154,16 @@ void output(uint16_t port, uint8_t data) {
 
 		if ((port | 0x3FFD) == 0xFFFD) {
 			//AY sound - write latch
+
+			u64 nPos = (u64) ((441 * (total + CPU_getCycles(CPU_Handle)))
+									/ (u64) CYCLES_PER_STEP);
 			if(ay0_enable) ay_reg_select(&ay0, data);
 		}
 
 		if ((port | 0x3FFD) == 0xBFFD) {
 			//AY sound - write data
+			u64 nPos = (u64) ((441 * (total + CPU_getCycles(CPU_Handle)))
+												/ (u64) CYCLES_PER_STEP);
 			if(ay0_enable) ay_reg_write(&ay0, data);
 		}
 
